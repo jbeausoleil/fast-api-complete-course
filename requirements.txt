@@ -8,6 +8,7 @@ python-multipart
 SQLAlchemy
 uvicorn
 passlib
+pydantic
 pytest
 httpx
 pytest-asyncio
