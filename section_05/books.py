@@ -1,5 +1,8 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException, Path, Query
 from pydantic import BaseModel, Field
+from starlette import status
+from starlette.status import HTTP_201_CREATED
+from typing import Optional
 
 app = FastAPI()
 
@@ -26,6 +29,24 @@ class BookRequest(BaseModel):
     author: str = Field(min_length=1)
     description: str = Field(min_length=1, max_length=500)
     rating: int = Field(ge=0, lt=6)
+
+
+class BookUpdate(BaseModel):
+    """
+    Schema for updating a book.
+
+    All fields are optional. Only the fields provided will be updated.
+
+    Attributes:
+        title: Updated title of the book (min length: 3).
+        author: Updated author name (min length: 1).
+        description: Updated book summary (1-500 characters).
+        rating: Updated user rating from 0 to 5 (inclusive).
+    """
+    title: Optional[str] = Field(None, min_length=3)
+    author: Optional[str] = Field(None, min_length=1)
+    description: Optional[str] = Field(None, min_length=1, max_length=500)
+    rating: Optional[int] = Field(None, ge=0, lt=6)
 
     model_config = {
         "extra": "forbid",
@@ -88,12 +109,40 @@ books: list[Book] = [
 ]
 
 
-@app.get("/books")
+def get_next_book_id() -> int:
+    """
+    Return the next available book ID.
+    """
+    next_id = max((b.id for b in books), default=0) + 1
+    return next_id
+
+
+@app.get("/books", response_model=list[Book])
 async def get_books() -> list[Book]:
     return books
 
 
-@app.post("/books", response_model=Book)
+@app.get("/books/{book_id}", response_model=Book, responses={404: {"description": "Book not found."}})
+async def get_book_by_id(book_id: int = Path(gt=0)) -> Book:
+    try:
+        return next(book for book in books if book.id == book_id)
+    except StopIteration:
+        raise HTTPException(status_code=404, detail="Book not found.")
+
+
+@app.get("/books/", response_model=list[Book])
+async def get_book_by_rating(book_rating: int) -> list[Book]:
+    """
+    Return all books with the given rating.
+    Raises 404 if no books match.
+    """
+    """
+    Return all books with the given rating. Returns an empty list if no books match.
+    """
+    return [book for book in books if book.rating == book_rating]
+
+
+@app.post("/books", response_model=Book, status_code=HTTP_201_CREATED)
 async def create_book(book: BookRequest) -> Book:
     """
     Create and store a new book.
@@ -104,15 +153,52 @@ async def create_book(book: BookRequest) -> Book:
     Returns:
         The newly created Book with a server-assigned ID.
     """
+    if any(book.title == book.title for book in books):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Book with this title already exists."
+        )
     next_id = get_next_book_id()
     new_book = Book(id=next_id, **book.model_dump())
     books.append(new_book)
     return new_book
 
 
-def get_next_book_id() -> int:
+@app.put("/books/{book_id}", response_model=Book)
+async def update_book(update: BookUpdate, book_id: int = Path(gt=0)) -> Book:
     """
-    Return the next available book ID.
+    Update the details of an existing book.
+
+    Applies partial updates to the fields provided.
+
+    Raises:
+        HTTPException: If no book with the given ID is found.
     """
-    next_id = max((b.id for b in books), default=0) + 1
-    return next_id
+    try:
+        index = next(i for i, b in enumerate(books) if b.id == book_id)
+    except StopIteration:
+        raise HTTPException(status_code=404, detail=f"Book with ID {book_id} not found.")
+    existing_book = books[index]
+    existing_book = existing_book.model_dump()
+    existing_book.update(update.model_dump(exclude_unset=True))
+    updated_book = Book(**existing_book)
+    books[index] = updated_book
+    return updated_book
+
+
+@app.delete("/books/{book_id}", response_model=None, status_code=status.HTTP_204_NO_CONTENT)
+async def delete_book(book_id: int = Path(gt=0)) -> None:
+    """
+    Delete a book by its ID.
+
+    Removes the book with the given ID from the collection.
+
+    Raises:
+        HTTPException: If no book with the given ID is found.
+    """
+    try:
+        index = next(i for i, b in enumerate(books) if b.id == book_id)
+    except StopIteration:
+        raise HTTPException(status_code=404, detail=f"Book with ID {book_id} not found.")
+    del books[index]
+    return

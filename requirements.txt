@@ -1,6 +1,6 @@
 bcrypt==4.0.1
 cryptography
-fastapi
+fastapi~=0.115.14
 psycopg2-binary
 PyMySQL
 python-jose
@@ -8,9 +8,10 @@ python-multipart
 SQLAlchemy
 uvicorn
 passlib
-pydantic
+pydantic~=2.11.7
 pytest
 httpx
 pytest-asyncio
 aiofiles
 jinja2
+starlette~=0.46.2
